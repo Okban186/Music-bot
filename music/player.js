@@ -119,20 +119,22 @@ async function getStreamUrl(url) {
             '--get-url',
             '--no-warnings',
             '--quiet',
+            '--force-ipv4', 
+            '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             url
         ]);
 
         let data = '';
         const timeout = setTimeout(() => {
             ytDlp.kill();
-            reject(new Error('Không thể tải luồng phát (Timeout)'));
+            reject(new Error('Timeout'));
         }, 15000);
 
         ytDlp.stdout.on('data', chunk => data += chunk.toString());
-
         ytDlp.on('close', code => {
             clearTimeout(timeout);
-            if (code !== 0) return reject(new Error('Không lấy được đường dẫn stream'));
+     
+            if (code !== 0 || !data.trim()) return reject(new Error('Không lấy được đường dẫn stream'));
             resolve(data.trim());
         });
     });
