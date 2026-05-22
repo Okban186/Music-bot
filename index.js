@@ -4,7 +4,16 @@ import fs from 'fs';
 import path from 'path'
 import 'dotenv/config'
 import { getVoiceConnection } from '@discordjs/voice';
-
+import http from 'http';
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Bot is alive');
+});
+// Render sử dụng biến môi trường PORT, nếu không có mặc định dùng 10000
+const PORT = process.env.PORT || 10000;
+server.listen(PORT, () => {
+    console.log(`Web server đang lắng nghe trên cổng ${PORT}`);
+});
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
