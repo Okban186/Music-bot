@@ -22,3 +22,28 @@ RUN npm install --production
 COPY . .
 
 CMD ["node", "index.js"]
+
+
+
+#For development purposes, to update the source code every time you save it, use nodemon.
+
+# FROM node:22-bookworm-slim
+
+# RUN apt-get update && apt-get install -y \
+#     build-essential \
+#     ffmpeg \
+#     python3 \
+#     python3-pip \
+#     python3-venv \
+#     curl \
+#     && rm -rf /var/lib/apt/lists/*
+
+# RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
+#     && chmod a+rx /usr/local/bin/yt-dlp
+
+# WORKDIR /app
+
+# COPY package*.json ./
+# RUN npm install
+
+# CMD ["node", "index.js"]

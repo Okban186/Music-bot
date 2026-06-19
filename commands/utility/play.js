@@ -1,8 +1,8 @@
 import { playSong }
-from '../../music/player.js';
+    from '../../music/player.js';
 
 import { createEmbed }
-from '../../embedStates.js';
+    from '../../embedStates.js';
 
 export const name = 'play';
 
@@ -27,34 +27,27 @@ export async function execute(
 
     try {
 
-    const result = await playSong(message, query);
+        const result = await playSong(message, query);
 
-if (result?.error === 'VOICE_REQUIRED') {
-    return message.channel.send('Bạn phải vào voice trước');
-}
+        if (result?.error === 'VOICE_REQUIRED') {
+            return message.channel.send('Bạn phải vào voice trước');
+        }
 
-if (result.queued) {
+        if (result.queued) {
 
-    return message.channel.send({
-            embeds: [
-                createEmbed(
-                    'success',
-                    `Da them ${result.amount} vao queue`
-                )
-            ]
-        })
-    
-}
+            return message.channel.send({
+                embeds: [
+                    createEmbed(
+                        'success',
+                        `Da them ${result.amount} vao queue`
+                    )
+                ]
+            })
+
+        }
 
 
-        return message.channel.send({
-            embeds: [
-                createEmbed(
-                    'success',
-                    'Đang phát nhạc'
-                )
-            ]
-        });
+        return
 
     } catch (err) {
 
