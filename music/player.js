@@ -9,7 +9,9 @@ import {
 } from '@discordjs/voice';
 import { spawn } from 'child_process';
 import prism from 'prism-media';
+import { createEmbed } from '../embedStates.js';
 
+const leaveTimeouts = new Map();
 const players = new Map();
 const queues = new Map();
 
@@ -52,7 +54,7 @@ async function getPlaylistVideos(url) {
     return await new Promise((resolve, reject) => {
         const ytDlp = spawn('yt-dlp', [
             '--flat-playlist',
-            '--yes-playlist',   
+            '--yes-playlist',
             '-i',               // Bỏ qua video chết/ẩn
             '--playlist-end', '20', // Giới hạn chỉ lấy tối đa 20 bài trong playlist
             '--print', 'id',    // Lệnh tối ưu nhất để lấy ID dòng lệnh dạng chữ, cực kì nhanh
@@ -70,11 +72,11 @@ async function getPlaylistVideos(url) {
 
         ytDlp.on('close', code => {
             clearTimeout(timeout);
-            
+
             // Tách các dòng ID ra thành mảng
             const lines = data.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
             // Lọc chuẩn ID video Youtube dài đúng 11 ký tự
-            const videoIds = lines.filter(id => id.length === 11); 
+            const videoIds = lines.filter(id => id.length === 11);
 
             if (videoIds.length > 0) {
                 const videos = videoIds.map(id => `https://www.youtube.com/watch?v=${id}`);
@@ -86,56 +88,100 @@ async function getPlaylistVideos(url) {
     });
 }
 
-async function getVideoInfo(url) {
+// async function getVideoInfo(url) {
+//     return await new Promise((resolve, reject) => {
+//         const ytDlp = spawn('yt-dlp', ['-J', '--no-playlist', url]);
+//         let data = '';
+//         let error = '';
+
+//         ytDlp.stdout.on('data', chunk => data += chunk.toString());
+//         ytDlp.stderr.on('data', chunk => error += chunk.toString());
+
+//         ytDlp.on('close', code => {
+//             if (code !== 0) return reject(new Error(error));
+//             try {
+//                 resolve(JSON.parse(data));
+//             } catch (err) {
+//                 reject(err);
+//             }
+//         });
+
+//         setTimeout(() => {
+//             ytDlp.kill();
+//             reject(new Error('Không thể lấy thông tin video (Timeout)'));
+//         }, 15000);
+//     });
+// }
+
+// async function getStreamUrl(url) {
+//     return await new Promise((resolve, reject) => {
+//         const ytDlp = spawn('yt-dlp', [
+//             '--no-playlist',
+//             '--format', 'bestaudio[ext=webm]/bestaudio',
+//             '--get-url',
+//             '--no-warnings',
+//             '--quiet',
+//             '--force-ipv4',
+//             '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+//             url
+//         ]);
+
+//         let data = '';
+//         const timeout = setTimeout(() => {
+//             ytDlp.kill();
+//             reject(new Error('Timeout'));
+//         }, 15000);
+
+//         ytDlp.stdout.on('data', chunk => data += chunk.toString());
+//         ytDlp.on('close', code => {
+//             clearTimeout(timeout);
+
+//             if (code !== 0 || !data.trim()) return reject(new Error('Không lấy được đường dẫn stream'));
+//             resolve(data.trim());
+//         });
+//     });
+// }
+
+async function getTrackDetails(url) {
     return await new Promise((resolve, reject) => {
-        const ytDlp = spawn('yt-dlp', ['-J', '--no-playlist', url]);
-        let data = '';
-        let error = '';
-
-        ytDlp.stdout.on('data', chunk => data += chunk.toString());
-        ytDlp.stderr.on('data', chunk => error += chunk.toString());
-
-        ytDlp.on('close', code => {
-            if (code !== 0) return reject(new Error(error));
-            try {
-                resolve(JSON.parse(data));
-            } catch (err) {
-                reject(err);
-            }
-        });
-
-        setTimeout(() => {
-            ytDlp.kill();
-            reject(new Error('Không thể lấy thông tin video (Timeout)'));
-        }, 15000);
-    });
-}
-
-async function getStreamUrl(url) {
-    return await new Promise((resolve, reject) => {
+        // Gộp cả việc chọn định dạng audio tốt nhất và xuất JSON
         const ytDlp = spawn('yt-dlp', [
             '--no-playlist',
-            '--format', 'bestaudio[ext=webm]/bestaudio',
-            '--get-url',
+            '-f', 'bestaudio[ext=webm]/bestaudio',
+            '-J', // Lấy file JSON tổng hợp
             '--no-warnings',
-            '--quiet',
-            '--force-ipv4', 
+            '--force-ipv4',
             '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             url
         ]);
 
         let data = '';
+        let error = '';
+
         const timeout = setTimeout(() => {
             ytDlp.kill();
-            reject(new Error('Timeout'));
+            reject(new Error('Timeout: Không thể lấy thông tin bài hát'));
         }, 15000);
 
         ytDlp.stdout.on('data', chunk => data += chunk.toString());
+        ytDlp.stderr.on('data', chunk => error += chunk.toString());
+
         ytDlp.on('close', code => {
             clearTimeout(timeout);
-     
-            if (code !== 0 || !data.trim()) return reject(new Error('Không lấy được đường dẫn stream'));
-            resolve(data.trim());
+            if (code !== 0) return reject(new Error(error));
+
+            try {
+                const info = JSON.parse(data);
+                resolve({
+                    title: info.title,
+                    duration: info.duration,
+                    thumbnail: info.thumbnail,
+                    uploader: info.uploader,
+                    streamUrl: info.url // <-- Direct link stream nằm ngay đây
+                });
+            } catch (err) {
+                reject(err);
+            }
         });
     });
 }
@@ -148,6 +194,11 @@ export async function playSong(message, url) {
     );
     if (!voiceChannel) {
         throw new Error('Hiện tại không có người dùng nào trong các kênh phòng thoại cả!');
+    }
+    //--- Nếu có người thêm URL thì reset timeout
+    if (leaveTimeouts.has(message.guild.id)) {
+        clearTimeout(leaveTimeouts.get(message.guild.id));
+        leaveTimeouts.delete(message.guild.id);
     }
 
     const queue = getQueue(message.guild.id);
@@ -163,7 +214,8 @@ export async function playSong(message, url) {
         for (const video of videos) {
             queue.push({
                 url: video,
-                requestedBy: message.author.username
+                requestedBy: message.author.username,
+                textChannelId: message.channel.id
             });
         }
 
@@ -175,7 +227,8 @@ export async function playSong(message, url) {
         // Link thường thì chỉ push ĐÚNG 1 bài này vào hàng đợi
         queue.push({
             url,
-            requestedBy: message.author.username
+            requestedBy: message.author.username,
+            textChannelId: message.channel.id
         });
 
         // Nếu bot đang phát nhạc từ trước -> Báo đưa 1 bài vào hàng chờ
@@ -195,15 +248,37 @@ export async function processQueue(message) {
 
     const song = queue[0];
 
-    if (!song.title) {
+    // Chỉ gọi yt-dlp một lần duy nhất nếu bài hát chưa có data
+    if (!song.streamUrl) {
         try {
-            const info = await getVideoInfo(song.url);
+            const info = await getTrackDetails(song.url);
             song.title = info.title;
             song.duration = info.duration;
             song.thumbnail = info.thumbnail;
             song.uploader = info.uploader;
-        } catch {
-            song.title = 'Unknown title';
+            song.streamUrl = info.streamUrl;
+        } catch (error) {
+            console.error('Lỗi khi lấy stream bài hát:', error.message);
+
+            // Phân loại lỗi để thông báo cho người dùng
+            let errorMsg = `💤 Không thể tải stream cho đường link **${song.url}**. Đã tự động bỏ qua bài này!`;
+            if (error.message.includes('DRM')) {
+                errorMsg = `Đường link **${song.url}** bị khóa bản quyền kỹ thuật số (DRM) và không thể phát. Đã tự động bỏ qua!`;
+            }
+
+            // Gửi tin nhắn lỗi vào kênh chat dựa trên textChannelId đã lưu
+            const textChannel = message.guild.channels.cache.get(song.textChannelId) || message.channel;
+            if (textChannel) {
+                textChannel.send({
+                    embeds: [
+                        createEmbed('fail', errorMsg)
+                    ]
+                }).catch(err => console.error("Không thể gửi thông báo lỗi DRM:", err));
+            }
+
+            // Xóa bài bị lỗi khỏi hàng đợi và lập tức gọi lại processQueue để phát bài tiếp theo
+            queue.shift();
+            return processQueue(message);
         }
     }
 
@@ -235,37 +310,33 @@ export async function processQueue(message) {
 
     await entersState(connection, VoiceConnectionStatus.Ready, 30000);
 
-    // --- 1. TỰ ĐỘNG DỌN DẸP KHI BỊ DISCONNECT THỦ CÔNG ---
-    // Kiểm tra listenerCount để tránh bị gom trùng lặp sự kiện khi bot chuyển bài hát tiếp theo
     if (!connection.listenerCount(VoiceConnectionStatus.Disconnected)) {
-        connection.on(VoiceConnectionStatus.Disconnected, async (oldState, newState) => {
+        connection.on(VoiceConnectionStatus.Disconnected, async () => {
             try {
-                // Chờ tối đa 5 giây xem bot có đang tự chuyển phòng hoặc do mạng lag chập chờn không
                 await Promise.race([
                     entersState(connection, VoiceConnectionStatus.Signalling, 5000),
                     entersState(connection, VoiceConnectionStatus.Connecting, 5000),
                 ]);
-                // Nếu chạy vào đây tức là bot đang cố gắng kết nối lại thành công, không cần xóa queue.
             } catch (error) {
-                // Nếu quá 5 giây mà không kết nối lại được -> Thực sự bị Disconnect/Kick
                 connection.destroy();
                 clearGuild(message.guild.id);
             }
         });
     }
 
-    const streamUrl = await getStreamUrl(song.url);
+    // KHÔNG GỌI LẠI getStreamUrl NỮA
+    // Đưa trực tiếp song.streamUrl vào FFmpeg
     const ffmpeg = new prism.FFmpeg({
         args: [
             '-reconnect', '1',
             '-reconnect_streamed', '1',
             '-reconnect_delay_max', '10',
             '-nostdin',
-            '-i', streamUrl,
+            '-i', song.streamUrl, // Sử dụng link stream đã lấy ở trên
             '-vn',
             '-f', 's16le',
             '-ar', '48000',
-            '-af', 'volume=1.6', 
+            '-af', 'volume=1.6',
             '-ac', '2'
         ]
     });
@@ -273,24 +344,33 @@ export async function processQueue(message) {
     const resource = createAudioResource(ffmpeg, { inputType: StreamType.Raw });
     const player = getPlayer(message.guild.id);
 
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
     player.play(resource);
     connection.subscribe(player);
 
     player.removeAllListeners(AudioPlayerStatus.Idle);
     player.once(AudioPlayerStatus.Idle, async () => {
-        // --- 2. ĐIỀU KIỆN CHẶN XUNG ĐỘT ---
-        // Nếu hàng đợi đã bị xóa từ trước (do sự kiện Disconnect ở trên kích hoạt trước), dừng xử lý luôn
         if (!queues.has(message.guild.id)) return;
 
-        queue.shift(); // Hát xong thì xóa bài hiện tại khỏi hàng đợi
+        queue.shift();
 
         if (queue.length > 0) {
-            // Nếu là link playlist (hoặc hàng đợi còn bài), bot tự động chạy tiếp bài sau
             await processQueue(message);
         } else {
-            // Nếu là link thường (hát xong hết bài) -> Dọn dẹp dứt điểm và rời phòng thoại
-            connection.destroy();
-            clearGuild(message.guild.id);
+            const timeout = setTimeout(() => {
+                connection.destroy();
+                clearGuild(message.guild.id);
+                leaveTimeouts.delete(message.guild.id);
+
+                message.channel.send({
+                    embeds: [
+                        createEmbed('fail', '💤 Đã rời phòng thoại do không có bài hát nào được thêm trong 3 phút qua.')
+                    ]
+                }).catch(err => console.error("Không thể gửi tin nhắn thông báo:", err));
+            }, 180000);
+
+            leaveTimeouts.set(message.guild.id, timeout);
         }
     });
 }
