@@ -5,15 +5,14 @@ import path from 'path'
 import 'dotenv/config'
 import { getVoiceConnection } from '@discordjs/voice';
 import http from 'http';
+import { clearGuild } from './music/player.js';
+import { createEmbed } from './embedStates.js';
+import { getQueue } from './music/player.js';
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('Bot is alive');
 });
-// Render sử dụng biến môi trường PORT, nếu không có mặc định dùng 10000
-const PORT = process.env.PORT || 10000;
-server.listen(PORT, () => {
-    console.log(`Web server đang lắng nghe trên cổng ${PORT}`);
-});
+
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -49,30 +48,46 @@ client.once('clientReady', () => {
 
 client.on('messageCreate', async message => {
 
-   if(message.author.bot) return;
-   if(!message.content.startsWith('3m!')) return;
-   const args = message.content.slice(3).trim().split(/ +/);
-   const commandName = args.shift().toLowerCase()
+    if (message.author.bot) return;
+    if (!message.content.startsWith('3m!')) return;
+    const args = message.content.slice(3).trim().split(/ +/);
+    const commandName = args.shift().toLowerCase()
 
-   const command = client.commands.get(commandName);
+    const command = client.commands.get(commandName);
 
-   if(!command) return 
-   await command.execute(message,args)
+    if (!command) return
+    await command.execute(message, args)
 });
 
-client.on('voiceStateUpdate',  async (oldState, newState) => {
+client.on('voiceStateUpdate', async (oldState, newState) => {
     const connection = getVoiceConnection(oldState.guild.id)
-    if(!connection) return;
+    if (!connection) return;
 
     const botChannelId = oldState.guild.members.me.voice.channelId;
-    if(!botChannelId) return;
+    if (!botChannelId) return;
 
-    if(oldState.channelId === botChannelId && newState.channelId !== botChannelId){
+    if (oldState.channelId === botChannelId && newState.channelId !== botChannelId) {
         const channel = oldState.guild.channels.cache.get(botChannelId);
         const realUsers = channel.members.filter(member => !member.user.bot).size;
 
 
-        if(realUsers === 0){
+        if (realUsers === 0) {
+            const queue = getQueue(oldState.guild.id);
+
+            if (queue && queue.length > 0) {
+                const textChannelId = queue[0].textChannelId;
+                const textChannel = oldState.guild.channels.cache.get(textChannelId);
+
+                if (textChannel) {
+                    textChannel.send({
+                        embeds: [
+                            createEmbed('fail', '💤 Không còn ai trong voice chat cả, geeee GET OUT!!!.')
+                        ]
+                    }).catch(err => console.error("Không thể gửi tin nhắn thông báo:", err));
+                }
+            }
+
+            clearGuild(oldState.guild.id);
             connection.destroy();
         }
     }
