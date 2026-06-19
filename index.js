@@ -8,10 +8,6 @@ import http from 'http';
 import { clearGuild } from './music/player.js';
 import { createEmbed } from './embedStates.js';
 import { getQueue } from './music/player.js';
-const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Bot is alive');
-});
 
 const client = new Client({
     intents: [
